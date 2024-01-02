@@ -1,8 +1,94 @@
-from flask import Flask
-import os
+from flask import Flask, render_template, request, redirect
+from flask_sqlalchemy import SQLAlchemy
+from datetime import datetime
 
 app = Flask(__name__)
+app.config['SQLALCHEMY_DATABASE_URI'] = "sqlite:///todo.db"
+app.config['SQLALCHEMY_TRACK_MODIFICATIONS'] = False
+db = SQLAlchemy(app)
 
-@app.route('/')
-def hello_world():
-    return 'Hello, world!'
+
+class Todo(db.Model):
+    sno = db.Column(db.Integer, primary_key=True)
+    title = db.Column(db.String(200), nullable=False)
+    desc = db.Column(db.String(500), nullable=False)
+    date_created = db.Column(db.DateTime, default=datetime.utcnow)
+
+    def __repr__(self) -> str:
+        return f"{self.sno} - {self.title}"
+
+
+def calculation(s):
+    arr = s.strip().split("\t")
+    mins = 0
+
+    for item in arr:
+        if 'hrs' in item:
+            hours = int(item.split(' ')[0])
+            minutes = int(item.split(' ')[2])
+
+            if hours > 8:
+                mins += (hours - 8) * 60 + minutes
+            elif hours < 8:
+                mins -= (7 - hours) * 60 + (60 - minutes)
+            else:
+                mins += minutes
+
+    return {'mins': f'{mins} Minutes', 'hrs': f'{mins//60} Hours, {mins%60} Minutes'}
+
+
+@app.route('/', methods=['GET', 'POST'])
+def index():
+    if request.method == 'POST':
+        title = request.form['title']
+        desc = request.form['desc']
+        todo = Todo(title=title, desc=desc)
+        db.session.add(todo)
+        db.session.commit()
+
+    allTodo = Todo.query.all()
+    return render_template('index.html', allTodo=allTodo)
+
+
+@app.route('/calculate', methods=['GET', 'POST'])
+def calculate():
+    hours = 0
+    if request.method == 'POST':
+        hours = request.form['hours']
+        hours = calculation(hours)
+    return render_template('index.html', hours=hours)
+
+
+@app.route('/show')
+def products():
+    allTodo = Todo.query.all()
+    print(allTodo)
+    return 'this is products page'
+
+
+@app.route('/update/<int:sno>', methods=['GET', 'POST'])
+def update(sno):
+    if request.method == 'POST':
+        title = request.form['title']
+        desc = request.form['desc']
+        todo = Todo.query.filter_by(sno=sno).first()
+        todo.title = title
+        todo.desc = desc
+        db.session.add(todo)
+        db.session.commit()
+        return redirect("/")
+
+    todo = Todo.query.filter_by(sno=sno).first()
+    return render_template('update.html', todo=todo)
+
+
+@app.route('/delete/<int:sno>')
+def delete(sno):
+    todo = Todo.query.filter_by(sno=sno).first()
+    db.session.delete(todo)
+    db.session.commit()
+    return redirect("/")
+
+
+if __name__ == "__main__":
+    app.run(debug=True, port=8000)
